@@ -1,0 +1,73 @@
+@startuml
+' Заголовок и настройки
+title Диаграмма последовательности - Оформление заказа
+skinparam sequenceMessageAlign center
+
+' Объявление участников
+actor "Клиент" as Client
+participant "Сервис заказов" as OrderService
+participant "Сервис корзины" as CartService
+participant "Платежный шлюз" as PaymentGateway
+database "База данных заказов" as DB
+
+' Основной сценарий
+Client -> OrderService: POST /checkout (данные доставки)
+activate OrderService
+
+OrderService -> CartService: GET /cart/{userId}
+activate CartService
+CartService --> OrderService: Товары и итоговая сумма
+deactivate CartService
+
+OrderService -> DB: Сохранить заказ (статус = "Ожидает оплаты")
+activate DB
+DB --> OrderService: orderId
+deactivate DB
+
+OrderService -> Client: 200 OK (orderId, ссылка на оплату)
+deactivate OrderService
+
+' --- Фрейм с циклом для проверки статуса ---
+loop Проверять каждые 3 секунды
+    Client -> PaymentGateway: GET /payment/status/{orderId}
+    activate PaymentGateway
+    PaymentGateway --> Client: Статус: "В процессе"
+    deactivate PaymentGateway
+end
+
+' Уведомление от шлюза (асинхронное)
+PaymentGateway -> OrderService: Webhook /payment-callback (orderId, success)
+activate OrderService
+
+' --- Фрейм с альтернативами ---
+alt Платеж успешен
+    OrderService -> DB: Обновить статус заказа на "Оплачен"
+    activate DB
+    DB --> OrderService: OK
+    deactivate DB
+
+    OrderService -> CartService: DELETE /cart/{userId} (очистить корзину)
+    activate CartService
+    CartService --> OrderService: OK
+    deactivate CartService
+
+    OrderService -> Client: WebSocket /notification "Заказ оплачен"
+    
+    ' --- Вложенный опциональный фрейм ---
+    opt Требуется подтверждение по email
+        OrderService -> Client: POST /email (чек заказа)
+        note right: Отправка чека на email клиента
+        Client --> OrderService: OK (доставлено)
+    end
+
+else Оплата не удалась
+    OrderService -> DB: Обновить статус заказа на "Ошибка оплаты"
+    activate DB
+    DB --> OrderService: OK
+    deactivate DB
+    
+    OrderService -> Client: WebSocket /notification "Ошибка оплаты. Попробуйте снова."
+end
+deactivate OrderService
+
+@enduml
