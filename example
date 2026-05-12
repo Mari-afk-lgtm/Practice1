@@ -1,0 +1,43 @@
+@startuml
+title Процесс заказа в интернет-магазине
+
+actor "Client" as client
+participant "Online-Store" as store
+participant "Warehouse" as warehouse
+participant "Payment-System" as payment
+
+' === OPT фрейм: аутентификация ===
+opt Аутентификация
+    client -> store: 1. Ввести логин и пароль
+    store -> store: 2. Аутентификация клиента
+    store --> client: 3. Ответ об успешной аутентификации
+end
+
+' Основной поток: выбор товара
+client -> store: 4. Нажать на карточку товара
+store -> warehouse: 5. Отправить запрос на наличие товара
+warehouse --> store: 6. Ответ
+
+' === ALT фрейм: проверка наличия ===
+alt Товар в наличии
+    store -> store: 7. Открыть карточку товара
+    client -> store: 8. Положить товар в корзину
+
+    ' === PAR фрейм: параллельные действия ===
+    par Резервирование товара и создание платежа
+        store -> warehouse: 9. Отправить запрос на резервирование товара
+        warehouse -> warehouse: 10. Зарезервировать товар
+        warehouse --> store: 11. Ответ
+    else
+        store -> payment: 12. Отправить запрос на создание черновика платежа
+        payment -> payment: 13. Создать черновик платежа
+        payment --> store: 14. Ответ
+    end
+
+    client -> store: 15. Открыть корзину
+
+else Товара в наличии нет
+    store --> client: 16. Отобразить уведомление о том, что товар закончился
+end
+
+@enduml
